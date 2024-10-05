@@ -145,8 +145,7 @@ class Terminal:
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE,
                                     text=True,
-                                    bufsize=1,
-                                    preexec_fn=os.setsid)
+                                    bufsize=1,)
         except Exception as e:
             logging.error(f"Error starting process: {e}")
             self.__outputs.append({
