@@ -1,43 +1,35 @@
 import streamlit as st
-import subprocess
-import threading
-import time
+from streamlit_terminal import st_terminal
 
-from notifier import notify
+import logging
 
-from queue import Queue
+logging.basicConfig(level=logging.DEBUG)
 
-def run_subprocess(q, process):
-    while process.poll() is None:
-        line = process.stdout.readline()
-        if line:
-            print(line)
-            q.put(line)
-            notify()
+import psutil
 
-if st.button("Start Process") and "process" not in st.session_state:
-    print("Starting process")
-    st.session_state.process = subprocess.Popen(["python", "-u", "clock.py"],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE,
-                               text=True,
-                               bufsize=1)
-    
-    st.session_state.queue = Queue()
-    st.session_state.stdout = []
+from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
+ctx = get_script_run_ctx()
+st.write(ctx.session_id)
 
-    thread = threading.Thread(target=run_subprocess,
-                              args=(st.session_state.queue,
-                                    st.session_state.process,))
-    thread.start()
 
-if "queue" in st.session_state:
-    if st.session_state.queue.qsize() > 0:
-        st.session_state.stdout.append(st.session_state.queue.get_nowait())
-        st.write(st.session_state.stdout)
-    
+with st.sidebar:
+    current_process = psutil.Process()
+    children = current_process.children(recursive=True)
+    if st.button("Terminate all child processes"):
+        for child in children:
+            child.terminate()
+            
+    for child in children:
+        logging.debug('Child pid is {}'.format(child.pid))
+        st.write(f'Child pid {child.pid}  \n  {child.exe()} {child.cmdline()}')
+        
 
-if st.button("Terminate"):
-    st.session_state.process.terminate()
-    del st.session_state.process
+    st.write(st.session_state)
+
+
+st_terminal(key="terminal1", value="python -u test/clock.py")
+
+st_terminal(key="terminal2", value="ls -la")
+
+st_terminal(key="terminal3", value=r"C:\cygwin64\bin\stdbuf.exe -o0 cmd.exe /c test\c.bat ")
 

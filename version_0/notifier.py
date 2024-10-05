@@ -60,4 +60,4 @@ def notify() -> None:
     streamlit_session._handle_rerun_script_request()
 
 # This can be called on any thread you want.
-# streamlit_loop.call_soon_threadsafe(notify)
+streamlit_loop.call_soon_threadsafe(notify)
