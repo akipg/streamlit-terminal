@@ -1,35 +1,19 @@
 import streamlit as st
 from streamlit_terminal import st_terminal
 
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-
-import psutil
-
-from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
-ctx = get_script_run_ctx()
-st.write(ctx.session_id)
+# set wide mode
+st.set_page_config(layout="wide")
 
 
-with st.sidebar:
-    current_process = psutil.Process()
-    children = current_process.children(recursive=True)
-    if st.button("Terminate all child processes"):
-        for child in children:
-            child.terminate()
-            
-    for child in children:
-        logging.debug('Child pid is {}'.format(child.pid))
-        st.write(f'Child pid {child.pid}  \n  {child.exe()} {child.cmdline()}')
-        
+st.markdown("# Streamlit Terminal")
 
-    st.write(st.session_state)
+st.markdown("## Example 1: Basic Usage")
+
+st_terminal("World", key="terminal1")
 
 
-st_terminal(key="terminal1", value="python -u test/clock.py")
+st.markdown("## Example 2: Custom Terminal")
 
-st_terminal(key="terminal2", value="ls -la")
-
-st_terminal(key="terminal3", value=r"C:\cygwin64\bin\stdbuf.exe -o0 cmd.exe /c test\c.bat ")
+# st_terminal("Hello", key="terminal2", terminal="iterm")
+st_terminal("Hello", key="terminal2")
 

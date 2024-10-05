@@ -26,8 +26,6 @@ def get_terminal_instance(key):
 def st_terminal(key, *args, **kwargs) -> None:   
     get_terminal_instance(key).component(*args, **kwargs)
 
-
-
 class Terminal:
     static_instance_id = 0
 
