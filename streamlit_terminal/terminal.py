@@ -3,7 +3,6 @@
 import streamlit as st
 import subprocess
 import threading
-import psutil
 import shlex
 import sys
 import logging
@@ -161,11 +160,11 @@ class Terminal:
 
         self._start_watch_stdout_stderr()
 
-    def attach(self, pid):
-        logging.debug(f"Attaching to process {pid}")
-        self.__process = psutil.Process(pid)
-        logging.debug(f"Attached to process {self.__process}")
-        self._start_watch_stdout_stderr()
+    # def attach(self, pid):
+    #     logging.debug(f"Attaching to process {pid}")
+    #     self.__process = psutil.Process(pid)
+    #     logging.debug(f"Attached to process {self.__process}")
+    #     self._start_watch_stdout_stderr()
 
     def getUpdatedOutputs(self):
         outs = []
