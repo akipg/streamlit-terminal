@@ -141,7 +141,7 @@ class Terminal:
                                     text=True,
                                     bufsize=1)
             else:
-                self.__process = subprocess.Popen(shlex.split(["exec"]+cmd),
+                self.__process = subprocess.Popen(shlex.split("exec "+cmd),
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE,
                                     text=True,
