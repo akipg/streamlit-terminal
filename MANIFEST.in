@@ -1,1 +1,1 @@
-recursive-include my_component/frontend-vue/dist *
+recursive-include streamlit_terminal/frontend-vue/dist *

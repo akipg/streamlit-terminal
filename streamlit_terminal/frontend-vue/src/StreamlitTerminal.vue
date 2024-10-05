@@ -3,8 +3,8 @@
         <v-toolbar density="compact">
             <v-app-bar-nav-icon></v-app-bar-nav-icon>
 
-            <v-toolbar-title v-if="commandHistory.length >= 1">{{ commandHistory[commandHistory.length - 1].value
-                }}</v-toolbar-title>
+            <v-toolbar-title v-if="args.command">{{ args.command }}</v-toolbar-title>
+            <v-toolbar-title v-else-if="commandHistory.length >= 1">{{ commandHistory[commandHistory.length - 1].value}}</v-toolbar-title>
             <v-toolbar-title v-else>{{ currentCommand }}</v-toolbar-title>
 
 
@@ -14,7 +14,8 @@
 
             <v-btn icon>
                 <v-icon v-if="args.is_running" @click="terminateProcess">mdi-stop</v-icon>
-                <v-icon v-else-if="currentCommand" @click="rerunLastCommand">mdi-replay</v-icon>
+                <v-icon v-else-if="args.command" @click="runProvidedCommand">{{args.run_count == 0 ? "mdi-play" : "mdi-replay"}}</v-icon>
+                <v-icon v-else-if="currentCommand" @click="rerunLastCommand">{{args.run_count == 0 ? "mdi-play" : "mdi-replay"}}</v-icon>
             </v-btn>
 
             <v-btn icon>
@@ -22,10 +23,14 @@
             </v-btn>
         </v-toolbar>
 
-        <div class="terminal" flat rounded="0" height="360px">
-
+        <div class="terminal" flat rounded="0"
+            :style="{
+                height: args.height > 0 ? args.height + 'px' : 'default',
+                minHeight: args.min_height > 0 ? args.min_height + 'px' : 'default',
+                maxHeight: args.max_height > 0 ? args.max_height + 'px' : 'default',
+                }">
             <div class="terminal-main pa-3">
-                <div class="history" v-if="args.welcome_message != ''">
+                <div class="history" v-if="args.show_welcome_message">
                     <pre>{{ args.welcome_message }}</pre>
                 </div>
 
@@ -36,12 +41,12 @@
                 </div>
 
 
-                <div :class="{ input: true, grayout: args.is_running }">
+                <div :class="{ input: true, grayout: args.is_running || args.disable_input }">
                     <div class="d-flex">
                         <span>{{ prompt }}</span>
                         <div style="width: 100%;">
                             <input v-bind="props" class="terminal-input" type="text" name="" id=""
-                                :disabled="args.is_running" @input="updateInput" @keydown="runCommand">
+                                :disabled="args.is_running || args.disable_input" @input="updateInput" @keydown="runCommand">
                         </div>
                     </div>
                 </div>
@@ -218,6 +223,10 @@ export default {
             this.sendMessageToStreamlit("run_command", [this.currentCommand]);
         },
 
+        runProvidedCommand() {
+            this.sendMessageToStreamlit("run_command", [this.args.command]);
+        },
+
         terminateProcess() {
             this.sendMessageToStreamlit("terminate_process");
         }
@@ -231,8 +240,6 @@ export default {
     font-size: x-small;
     font-family: monospace;
     overflow: scroll;
-
-    height: 350px;
 
     .terminal-main {
         padding-bottom: 0;
