@@ -1,5 +1,7 @@
 # streamlit-terminal
 
+[Demo](https://akipg-streamlit-terminal-app-qgr550.streamlit.app/)
+
 ![](example1.png)
 
 🚧 **Work in Progress** 🚧
