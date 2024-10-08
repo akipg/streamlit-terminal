@@ -1,12 +1,16 @@
-
-
-import streamlit as st
 import subprocess
 import threading
 import shlex
 import sys
 import logging
+import select
+import time
+import socket
+import os
 from queue import Queue
+
+from .utils.session import get_browser_session_id, find_streamlit_main_loop, get_streamlit_session, notify
+from .utils.thread import _Thread
 
 class Terminal:
     static_instance_id = 0
@@ -29,7 +33,6 @@ class Terminal:
         # This is it!
         # get_browser_session_id needs to be run on the relevant script thread,
         # then you can call the rest of this on other threads.
-        from .utils import get_browser_session_id, find_streamlit_main_loop, get_streamlit_session, notify
         self.streamlit_loop = find_streamlit_main_loop()
         self.streamlit_session = get_streamlit_session(get_browser_session_id())
 
@@ -38,10 +41,10 @@ class Terminal:
 
     def __del__(self):
         logging.debug("DDDDDDDDDDDDDDD Deleting Terminal instance")
-        for _th in self.__threads:
-            _th.join()
+        self.terminate()
 
-    def _read_stdbuffer(self, which_buf, q, process):
+    def _read_stdbuffer(self, which_buf, q, process, read_interval=0.01, read_timeout=0.1, exit_event=None, force_exit_event=False, exiterbuf=None):
+        # Get the stdbuffer
         if which_buf == "stdout":
             stdbuf = process.stdout
         elif which_buf == "stderr":
@@ -49,27 +52,74 @@ class Terminal:
         else:
             raise ValueError("Invalid buffer")
         
+        # Start reading the buffer
         logging.debug(f"Start _read_stdbuffer for {which_buf} {process}, {q}")
         while process.poll() is None:
+
+            # Check if exit event is set
+            ### exit_eevnt: When fired, exit this thread after reading remaining buffer(stdout/stderr)
+            ### force_exit_event: When fired, exit this thread **without** reading remaining buffer(stdout/stderr)
+            if (exit_event is not None and not exit_event.is_set()) or (force_exit_event and force_exit_event.is_set()):
+                logging.debug(f"Exit event set for {which_buf} {process}: exit_event: {exit_event}, force_exit_event: {force_exit_event}")
+                break
             
+            # Wait for the file descriptor to be ready for reading
+            ready_to_read = False
             logging.debug(f"Polling {which_buf} for process {process}")
             logging.debug(f"Current qsize for process {process} is {q.qsize()}, {q}")
-            stdbuf.flush()
-            out = stdbuf.readline()
-            if out:
+            if os.name == 'linux':
+                if exiterbuf is None:
+                    # Wait for the buffer to be ready
+                    ready, _, _ = select.select([stdbuf], [], [], read_timeout)
+                else:
+                    # Wait for either buffer to be ready
+                    ready, _, _ = select.select([stdbuf, exiterbuf], [], [], read_timeout)
+                    # If exiter buffer is ready, break the loop
+                    if exiterbuf in ready:
+                        logging.debug(f"Exiter buffer ready for {which_buf} {process}")
+                        break
+                ready_to_read = stdbuf in ready
+            else:
+                # Windows does not support select for file descriptors
+                # So we cannot set tiemout for reading stdout/stderr
+                ready_to_read = True
+            
+            # Check if the buffer is ready
+            if ready_to_read:
+                # Read from the buffer
+                out = stdbuf.readline()
                 logging.debug(f"{process}: {which_buf.upper()}: {out}")
-                q.put({"type": f"{which_buf}", "value": out})
-                self.notify()
+                if out:
+                    # Put the read line to the queue
+                    q.put({"type": f"{which_buf}", "value": out})
+                    # Notify the main thread to update the UI
+                    self.notify()
+
+            # If exit event is set, break the loop
+            if (exit_event is not None and not exit_event.is_set()) or (force_exit_event and force_exit_event.is_set()):
+                break
+
+            # Sleep for a while to avoid busy waiting
+            time.sleep(read_interval) 
         
         # Read remaining
-        out = stdbuf.read()
-        if out:
-            logging.debug(f"{process}: {which_buf.upper()}(remaining): {out}")
-            for o in out.splitlines():
-                q.put({"type": f"{which_buf}", "value": o})
-        logging.debug(f"Finished thread _read_stdbuffer for {which_buf} finished {process}")
-        
+        if (force_exit_event and force_exit_event.is_set()):
+            # Not to read remaining when force exit event is set
+            pass
+        else:
+            # Read remaining
+            logging.debug(f"Force exit event set for {which_buf} {process}")
+            out = stdbuf.read()
+            if out:
+                # Put the read line to the queue
+                logging.debug(f"{process}: {which_buf.upper()}(remaining): {out}")
+                for o in out.splitlines():
+                    q.put({"type": f"{which_buf}", "value": o})
+            
+        # Notify the main thread to update the UI
         self.notify()
+
+        logging.debug(f"Finished thread _read_stdbuffer for {which_buf} finished {process}")
 
     def _watch_queue(self):
         logging.debug(f"Start watching queue for process {self.__process}, Queue: {self.__queue}")
@@ -77,7 +127,7 @@ class Terminal:
             if self.__queue.qsize() > 0:
                 logging.debug(f"Notify Queue: size: {self.__queue.qsize()}")
                 # self.__outputs.append(self.__queue.get_nowait())
-                self.notify()
+            self.notify()
         logging.debug(f"Thread _watch_queue finished {self.__process}")
     
 
@@ -86,34 +136,23 @@ class Terminal:
 
         # Start reading stdout
         logging.debug(f"Starting reading stdout for process {self.__process}, Queue: {self.__queue}")
-        self.__threads = []
-        self.__threads.append(
-            threading.Thread(target=self._read_stdbuffer,
-                             args=("stdout",
-                                   self.__queue,
-                                   self.__process,))
-        )
-        
-        # Start reading stderr
-        self.__threads.append(
-             threading.Thread(target=self._read_stdbuffer,
-                             args=("stderr",
-                                   self.__queue,
-                                   self.__process,))
-        )
-
-        
-        # Watch queue
-        # self.__threads.append(
-        #     threading.Thread(target=self._watch_queue)
-        # )
-
-        for _th in self.__threads:
+        for _which_buf in ("stdout", "stderr"):
+            logging.debug(f"Starting thread for {_which_buf} {self._read_stdbuffer}")
+            # _th = threading.Thread(target=self._read_stdbuffer, daemon=True,
+            _th = _Thread(target=self._read_stdbuffer, daemon=True,
+                                   args=(_which_buf,
+                                         self.__queue,
+                                         self.__process,))
             _th.start()
-
+            self.__threads.append(_th)
+            logging.debug(f"Append thread: idx {len(self.__threads)-1}")
 
     def run(self, cmd):
         logging.debug(f"Running subprocess: {cmd}")
+
+        if self.__process is not None:
+            logging.debug(f"Terminating existing process {self.__process}")
+            self.terminate()
 
         # Check if process is running
         if self.__process is not None:
@@ -234,7 +273,7 @@ class Terminal:
         elif command == "terminate_process":
             if self.process:
                 logging.debug(f"Terminating process {self.process}")
-                self.process.terminate()
+                self.terminate()
         elif command == "add_not_run_command":
             self.add_not_run_command(args[0])
         else:
@@ -243,50 +282,34 @@ class Terminal:
         return msg
 
     def notify(self):
-        from .utils import notify
+        # Notify the main thread to update the UI
         self.streamlit_loop.call_soon_threadsafe(notify, self.streamlit_session)
+    
+    def terminate(self):
+        if self.__process is not None and self.__process.poll() is None:
+            logging.debug(f"Terminating process {self.__process}")
+            self.__process.terminate()
+        else:
+            self.__process = None
+        logging.debug(f"Number of threads: {len(self.__threads)}")
+        self._check_threads_alive()
+        for i, _th in enumerate(self.__threads):
+            try:
+                logging.debug(f"Terminating thread {_th}")
+                _th.exit()
+                del self.__threads[i]
+            except:
+                logging.warning(f"Error terminating thread {_th}")
+                pass
         
- 
-    @st.fragment
-    def component(self, value, key=None):
-        if key is None:
-            key = self.__key
-
-        is_running = self.__process is not None and self.__process.poll() is None
-
-        logging.debug(f"Rendering component for Terminal instance {self.__process}, Queue: {self.__queue}")
-        st.write(self.__queue)
-
-        self.cmd = st.text_input("Command", value=value, key=key+"_text_input_cmd")
-
-        # Run button
-        if st.button("Run" if not is_running else "Running...", key=key+"_button_run", disabled=is_running) and self.cmd is not None:
-            logging.debug(f"Running command: {self.cmd}")
-            self.run(self.cmd.split(" "))
-            # st.rerun(scope="fragment")
-
-        with st.expander("Attach to existing process (experimental)"):
-            pid = st.number_input("PID", key=key+"_number_input_pid", value=0)
-            if st.button("Attach", key=key+"_button_attach", disabled=is_running):
-                self.attach(pid)
-                # st.rerun(scope="fragment")
-
-        # Terminate button
-        if st.button("Terminate", key=key+"_button_terminate", disabled=not is_running) and self.__process:
-            if self.__process is not None and self.__process.poll() is None:
-                logging.debug(f"Terminating process {self.__process}")
-                self.__process.terminate()
-                st.rerun(scope="fragment")
-
-        # Get stdout/stderr
-        if self.__queue is not None and self.__queue.qsize() > 0:
-            while not self.__queue.empty():
-                out = self.__queue.get_nowait()
-                self.__outputs += out.splitlines()
+        logging.debug(f"Number of threads after terminate: {len(self.__threads)}")
         
-        # Output
-        st.write("  \n  ".join(self.__outputs))
-
+    def _check_threads_alive(self):
+        for i, _th in enumerate(self.__threads):
+            if not _th.is_alive():
+                logging.debug(f"Thread {_th} is not alive")
+            else:
+                logging.warning(f"Thread_{i} {_th} is alive")
 
     @property
     def process(self):
@@ -315,5 +338,3 @@ class Terminal:
     @property
     def run_count(self):
         return self.__run_count
-
-

@@ -1,0 +1,28 @@
+{
+    "configurations": [
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Launch Streamlit App",
+            "program": "${workspaceFolder}/app.py",
+            "console": "integratedTerminal",
+            "args": [
+                "run"
+            ],
+            "justMyCode": true
+        }
+    ],
+    "inputs": [
+        {
+            "type": "pickString",
+            "id": "programPath",
+            "description": "Select the Python file to run",
+            "options": [
+                "app.py",
+                "app2.py",
+                "version_0/app.py",
+                "version_0.1/app.py"
+            ]
+        }
+    ]
+}

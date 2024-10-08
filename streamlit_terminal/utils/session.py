@@ -5,18 +5,8 @@ from streamlit.runtime.app_session import AppSession
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.runtime.runtime import Runtime
 
-import streamlit as st
-from .terminal import Terminal
-
-def get_terminal_instance(key) -> Terminal:
-    if key in st.session_state:
-        return st.session_state[key]
-    else:
-        st.session_state[key] = Terminal(key)
-        return st.session_state[key]
-
-
 ### Streamlit utils
+### Ref: https://github.com/streamlit/streamlit/issues/2838#issuecomment-1738983577
 def get_browser_session_id() -> str:
     # Get the session_id for the current running script 
     try:

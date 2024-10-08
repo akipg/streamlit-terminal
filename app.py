@@ -4,6 +4,11 @@ from streamlit_terminal import st_terminal
 # Set wide mode
 st.set_page_config(layout="wide")
 
+# Set debug mode
+if st.query_params.get("debug"):
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+
 st.markdown("🚧 **Work in Progress** 🚧")
 
 st.markdown("# Streamlit Terminal")

@@ -3,7 +3,7 @@ import logging
 
 import streamlit.components.v1 as components
 
-from .utils import get_terminal_instance
+from .utils.terminal_instance import get_terminal_instance
 
 ASCII_ART= r"""
          __                            ___ __        __                      _             __
@@ -61,21 +61,19 @@ else:
 # our component's API: we can pre-process its input args, post-process its
 # output value, and add a docstring for users.
 def st_terminal(command="",
-                key=None,
                 height=360,
                 min_height=-1,
                 max_height=-1,
                 disable_input=False,
                 show_welcome_message=False,
                 welcome_message=ASCII_ART,
+                key=None,
                 ):
     """Create a new instance of "my_component".
 
     Parameters
     ----------
-    name: str
-        The name of the thing we're saying hello to. The component will display
-        the text "Hello, {name}!"
+    ...
     key: str or None
         An optional key that uniquely identifies this component. If this is
         None, and the component's arguments are changed, the component will
@@ -83,11 +81,10 @@ def st_terminal(command="",
 
     Returns
     -------
-    int
-        The number of times the component's "Click Me" button has been clicked.
-        (This is the value passed to `Streamlit.setComponentValue` on the
-        frontend.)
-
+    tuple
+        A tuple of the form (full_outputs, updated_outputs). 
+        full_outputs is a list of all outputs from the terminal.
+        updated_outputs is a list of outputs that have been updated since the last return.
     """
 
     terminal_instance = get_terminal_instance(key+"_instance")
@@ -104,13 +101,15 @@ def st_terminal(command="",
     #
     # "default" is a special argument that specifies the initial return
     # value of the component before the user has interacted with it.
-    msg = _component_func(command=command,
+    msg = _component_func(### External parameters
+                          command=command,
                           disable_input=disable_input,
                           height=height,
                           min_height=min_height,
                           max_height=max_height,
                           show_welcome_message=show_welcome_message,
                           welcome_message=welcome_message,
+                          ### Inrernal parameters
                           is_running=terminal_instance.is_running,
                           history=terminal_instance.outputs,
                           run_count=terminal_instance.run_count,
@@ -121,6 +120,7 @@ def st_terminal(command="",
                               "kwargs": {}})
     logging.debug(f"Received value from component: {msg}")
 
+    # Process the message from the frontend
     ret = terminal_instance.procMsg(msg)
 
     # We could modify the value returned from the component if we wanted.
